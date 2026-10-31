@@ -1,0 +1,13 @@
+# lote 3: apps nao escolhidos pelo usuario
+org.fdroid.fdroid
+org.zwanoo.android.speedtest
+com.naughty.cinegato
+br.tv.watch.watchbrasil
+com.cbs.ca
+com.longtv
+com.instantbits.cast.receiver
+com.hi.cast.dlna.renderer
+com.home.cast.dlna.renderer
+ru.zdevs.zarchiver
+com.finalwire.aida64
+com.cpuid.cpu_z

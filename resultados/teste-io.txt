@@ -1,0 +1,6 @@
+1 A dd=23890081 settings=1659 youtube=1505 temp=83
+2 B dd=26505116 settings=1392 youtube=1015 temp=83
+3 A dd=25138873 settings=1370 youtube=1115 temp=87
+4 B dd=26598774 settings=1431 youtube=974 temp=83
+5 A dd=25026224 settings=1583 youtube=1299 temp=87
+6 B dd=26582438 settings=1470 youtube=1070 temp=83

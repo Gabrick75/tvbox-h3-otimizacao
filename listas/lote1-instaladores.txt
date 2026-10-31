@@ -1,0 +1,8 @@
+# TV box dolphin_fvd_p1 - lote 1: instaladores
+com.uv.droid.uota
+com.uv.droid.uotaback
+com.android.update.assist
+com.android.netservice
+com.android.domain
+com.android.assistant.setting.pro
+com.android.assistant.setting.iknew

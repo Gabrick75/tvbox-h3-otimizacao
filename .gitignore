@@ -1,0 +1,9 @@
+# Nunca publicar: contêm dados de conta, Wi-Fi salva e identificadores do aparelho
+backup/
+*.img
+*.img.gz
+*.apk
+*.jks
+*.keystore
+shots/
+qw

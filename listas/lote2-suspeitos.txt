@@ -1,0 +1,7 @@
+# lote 2: apps ligados aos instaladores
+com.hopper.rsshub
+com.core.rss
+com.system.memory.tool
+com.systemguard.android
+com.qcode.ad_service_server
+om.giggle.gigglegrove

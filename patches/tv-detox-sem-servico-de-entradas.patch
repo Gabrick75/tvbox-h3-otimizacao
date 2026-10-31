@@ -1,0 +1,39 @@
+diff --git a/src/com/ansub/tvhome/MainActivity.java b/src/com/ansub/tvhome/MainActivity.java
+index 9f2cf09..f511bae 100644
+--- a/src/com/ansub/tvhome/MainActivity.java
++++ b/src/com/ansub/tvhome/MainActivity.java
+@@ -1423,20 +1423,29 @@ public class MainActivity extends Activity {
+     // Every HDMI input the TV reports that isn't switched off in its own settings, hidden or not.
+     private List<TvInputInfo> allInputs() {
+         List<TvInputInfo> out = new ArrayList<>();
+-        TvInputManager tim = (TvInputManager) getSystemService(Context.TV_INPUT_SERVICE);
+-        if (tim == null) return out;
+-        for (TvInputInfo in : tim.getTvInputList()) if (countsAsInput(in)) out.add(in);
++        for (TvInputInfo in : tvInputs(this)) if (countsAsInput(in)) out.add(in);
+         Collections.sort(out, (a, b) -> a.getId().compareTo(b.getId()));
+         return out;
+     }
+ 
++    // Some Android TV boxes have no TV input service: the manager exists, but its binder is null and
++    // getTvInputList() throws. Those boxes simply have no inputs.
++    private static List<TvInputInfo> tvInputs(Context c) {
++        TvInputManager tim = (TvInputManager) c.getSystemService(Context.TV_INPUT_SERVICE);
++        if (tim == null) return Collections.emptyList();
++        try {
++            return tim.getTvInputList();
++        } catch (RuntimeException e) {
++            return Collections.emptyList();
++        }
++    }
++
+     // A TV has inputs of its own (HDMI, AV); a box that plugs into one, like NVIDIA Shield, Chromecast
+     // or a Mi Box, has none. Some TVs register their HDMI inputs a while after starting (#52), so with
+     // none yet it's a box only if HDMI-CEC says it's a playback device and not a TV. When unsure, it's
+     // a TV, so TVs keep their menu.
+     static boolean isBox(Context c) {
+-        TvInputManager tim = (TvInputManager) c.getSystemService(Context.TV_INPUT_SERVICE);
+-        if (tim != null) for (TvInputInfo in : tim.getTvInputList()) if (in.isPassthroughInput()) return false;
++        for (TvInputInfo in : tvInputs(c)) if (in.isPassthroughInput()) return false;
+         List<String> types = cecTypes("ro.hdmi.device_type"), named = cecTypes("ro.hdmi.cec_device_types");
+         if (types.contains("0") || named.contains("tv")) return false;
+         return types.contains("4") || named.contains("playback_device");
