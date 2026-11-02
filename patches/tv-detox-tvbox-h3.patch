@@ -1,0 +1,330 @@
+diff --git a/src/com/ansub/tvhome/MainActivity.java b/src/com/ansub/tvhome/MainActivity.java
+index 9f2cf09..c0c13a1 100644
+--- a/src/com/ansub/tvhome/MainActivity.java
++++ b/src/com/ansub/tvhome/MainActivity.java
+@@ -107,6 +107,8 @@ public class MainActivity extends Activity {
+     // and the clock override ("12" or "24"; absent follows the TV).
+     private static final String PREF_INPUT_NAMES = "inputnames", PREF_HIDDEN_INPUTS = "hiddeninputs";
+     private static final String PREF_CLOCK = "clock", PREF_FAKE_INPUTS = "fakeinputs";
++    // "0" hides the system usage line under the clock; absent shows it.
++    private static final String PREF_STATS = "stats";
+     // The throwaway input install.sh adds with FAKE_INPUT=1. It has no HDMI port behind it; it is
+     // there so an emulator, which has no inputs of its own, still has a tile to test with.
+     private static final String FAKE_INPUT_PKG = "com.ansub.fakeinput";
+@@ -127,6 +129,7 @@ public class MainActivity extends Activity {
+ 
+     // The Settings tile opens a small menu: the home screen's own settings, then the TV's.
+     private static final String[] SETTINGS_ITEMS = {"Wallpaper", "Brightness", "TV settings"};
++    private static final String STATS_SHOW = "Show system usage", STATS_HIDE = "Hide system usage";
+     // Android TV 11 and later (Google TV too) has no Display page, but its "Display & Sound" page holds Picture.
+     private static final String[] TV_DISPLAY_SOUND = {"com.android.tv.settings",
+             "com.android.tv.settings.device.displaysound.DisplaySoundActivity"};
+@@ -229,6 +232,19 @@ public class MainActivity extends Activity {
+         LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(-2, -2);
+         tp.topMargin = px(-20); // pull the big digits up under the date
+         clock.addView(time, tp);
++        // System readings under the time, refreshed while the home screen is showing.
++        stats = text(px(22), 0x99FFFFFF, regular);
++        stats.setFontFeatureSettings("tnum");
++        stats.setLetterSpacing(0.02f);
++        stats.setSingleLine(true);
++        stats.setText(SystemStats.placeholder());
++        stats.setVisibility(statsShown() ? View.VISIBLE : View.GONE);
++        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-2, -2);
++        sp.topMargin = px(6);
++        clock.addView(stats, sp);
++        statsThread = new android.os.HandlerThread("stats");
++        statsThread.start();
++        statsHandler = new android.os.Handler(statsThread.getLooper());
+         root.addView(clock, at(px(MARGIN), px(92), -2, -2));
+ 
+         moveHint = text(px(24), 0xA8FFFFFF, regular);
+@@ -253,8 +269,42 @@ public class MainActivity extends Activity {
+         } catch (Exception ignored) {}
+     }
+ 
++    private TextView stats;
++    private android.os.HandlerThread statsThread;
++    private android.os.Handler statsHandler;
++    private final SystemStats systemStats = new SystemStats(); // only touched on statsThread
++    private static final int STATS_EVERY_MS = 2000;
++
++    private boolean statsShown() {
++        return !"0".equals(prefs().getString(PREF_STATS, null));
++    }
++
++    // From the Settings menu: shows or hides the line, and starts or stops the readings with it.
++    private void toggleStats() {
++        boolean show = !statsShown();
++        if (show) prefs().edit().remove(PREF_STATS).apply();
++        else prefs().edit().putString(PREF_STATS, "0").apply();
++        stats.setVisibility(show ? View.VISIBLE : View.GONE);
++        statsHandler.removeCallbacks(statsTick);
++        if (show) {
++            stats.setText(SystemStats.placeholder());
++            statsHandler.post(statsTick);
++        }
++    }
++
++    private final Runnable statsTick = new Runnable() {
++        @Override
++        public void run() {
++            final String line = systemStats.line();
++            runOnUiThread(() -> stats.setText(line));
++            statsHandler.postDelayed(this, STATS_EVERY_MS);
++        }
++    };
++
+     @Override
+     protected void onDestroy() {
++        statsHandler.removeCallbacks(statsTick);
++        statsThread.quitSafely();
+         unregisterReceiver(packagesChanged);
+         ConnectivityManager cm = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+         if (cm != null) try { cm.unregisterNetworkCallback(networkChanged); } catch (Exception ignored) {}
+@@ -355,6 +405,8 @@ public class MainActivity extends Activity {
+         View f = getCurrentFocus();
+         if (f == null && !tiles.isEmpty()) tiles.get(0).requestFocus();
+         HomeButton.onHomeResumed(this); // back on this home screen: Home comes here again
++        statsHandler.removeCallbacks(statsTick);
++        if (statsShown()) statsHandler.post(statsTick);
+         // Only counted as opened once it has stayed up a moment, so a crash right after opening still
+         // counts as a failed launch.
+         getWindow().getDecorView().postDelayed(homeOk, 1500);
+@@ -368,6 +420,7 @@ public class MainActivity extends Activity {
+         // Left normally (an app or Settings opened), so it didn't crash.
+         getWindow().getDecorView().removeCallbacks(homeOk);
+         HomeButton.onHomeOk(this);
++        statsHandler.removeCallbacks(statsTick); // no readings while an app is in front
+     }
+ 
+     // Back from a menu or a window on top (like the uninstall prompt): catch up on apps that changed.
+@@ -779,9 +832,11 @@ public class MainActivity extends Activity {
+             // Shield, Brightness also fell back to a Display & Sound page that's listed but missing there.
+             List<String> list = new ArrayList<>(Arrays.asList(SETTINGS_ITEMS));
+             if (isBox(this)) list.remove("Brightness");
++            list.add(list.size() - 1, statsShown() ? STATS_HIDE : STATS_SHOW); // before TV settings
+             final String[] items = list.toArray(new String[0]);
+             dropdown(tile(SETTINGS), items, which -> {
+                 if ("Wallpaper".equals(items[which])) showWallpapers();
++                else if (STATS_HIDE.equals(items[which]) || STATS_SHOW.equals(items[which])) toggleStats();
+                 else if ("Brightness".equals(items[which])) openBrightness();
+                 else openTvSettings();
+             });
+@@ -1423,20 +1478,29 @@ public class MainActivity extends Activity {
+     // Every HDMI input the TV reports that isn't switched off in its own settings, hidden or not.
+     private List<TvInputInfo> allInputs() {
+         List<TvInputInfo> out = new ArrayList<>();
+-        TvInputManager tim = (TvInputManager) getSystemService(Context.TV_INPUT_SERVICE);
+-        if (tim == null) return out;
+-        for (TvInputInfo in : tim.getTvInputList()) if (countsAsInput(in)) out.add(in);
++        for (TvInputInfo in : tvInputs(this)) if (countsAsInput(in)) out.add(in);
+         Collections.sort(out, (a, b) -> a.getId().compareTo(b.getId()));
+         return out;
+     }
+ 
++    // Some Android TV boxes have no TV input service: the manager exists, but its binder is null and
++    // getTvInputList() throws. Those boxes simply have no inputs.
++    private static List<TvInputInfo> tvInputs(Context c) {
++        TvInputManager tim = (TvInputManager) c.getSystemService(Context.TV_INPUT_SERVICE);
++        if (tim == null) return Collections.emptyList();
++        try {
++            return tim.getTvInputList();
++        } catch (RuntimeException e) {
++            return Collections.emptyList();
++        }
++    }
++
+     // A TV has inputs of its own (HDMI, AV); a box that plugs into one, like NVIDIA Shield, Chromecast
+     // or a Mi Box, has none. Some TVs register their HDMI inputs a while after starting (#52), so with
+     // none yet it's a box only if HDMI-CEC says it's a playback device and not a TV. When unsure, it's
+     // a TV, so TVs keep their menu.
+     static boolean isBox(Context c) {
+-        TvInputManager tim = (TvInputManager) c.getSystemService(Context.TV_INPUT_SERVICE);
+-        if (tim != null) for (TvInputInfo in : tim.getTvInputList()) if (in.isPassthroughInput()) return false;
++        for (TvInputInfo in : tvInputs(c)) if (in.isPassthroughInput()) return false;
+         List<String> types = cecTypes("ro.hdmi.device_type"), named = cecTypes("ro.hdmi.cec_device_types");
+         if (types.contains("0") || named.contains("tv")) return false;
+         return types.contains("4") || named.contains("playback_device");
+diff --git a/src/com/ansub/tvhome/Strings.java b/src/com/ansub/tvhome/Strings.java
+index 9b34a2e..d5cba5e 100644
+--- a/src/com/ansub/tvhome/Strings.java
++++ b/src/com/ansub/tvhome/Strings.java
+@@ -13,6 +13,7 @@ final class Strings {
+         "Move", "Replace", "Remove from home", "Uninstall", "App info",
+         "Use the arrows to move it, then press OK", "Every app is already here", "Add an app", "Replace %s", "Wallpaper", "TV settings", "Brightness",
+         "Rename", "Show hidden inputs", "TV", "Laptop", "PC", "Blu-ray", "Soundbar", "Type a name…",
++        "Show system usage", "Hide system usage",
+     };
+ 
+     // Keyed by language ("de"), or language-country ("zh-TW") where a country writes it differently.
+@@ -92,6 +93,7 @@ final class Strings {
+             "Mover", "Substituir", "Remover do início", "Desinstalar", "Informações do app",
+             "Use as setas para mover e depois aperte OK", "Todos os apps já estão aqui", "Adicionar um app", "Substituir %s", "Plano de fundo", "Configurações da TV", "Brilho",
+             "Renomear", "Mostrar entradas ocultas", "TV", "Notebook", "PC", "Blu-ray", "Barra de som", "Digite um nome…",
++            "Mostrar uso do sistema", "Ocultar uso do sistema",
+         });
+         LANGS.put("ru", new String[] {
+             "Настройки", "Добавить", "Сеть", "Нет сети", "Звук", "Изображение",
+diff --git a/src/com/ansub/tvhome/SystemStats.java b/src/com/ansub/tvhome/SystemStats.java
+new file mode 100644
+index 0000000..cb49177
+--- /dev/null
++++ b/src/com/ansub/tvhome/SystemStats.java
+@@ -0,0 +1,156 @@
++package com.ansub.tvhome;
++
++import android.os.Environment;
++import android.os.StatFs;
++import android.system.Os;
++import android.system.OsConstants;
++
++import java.io.BufferedReader;
++import java.io.FileReader;
++
++// Readings for the line under the clock. A value the box doesn't expose shows as "--".
++// Not thread safe: call line() from one thread only.
++final class SystemStats {
++    private static final String CPU_DIR = "/sys/devices/system/cpu/";
++    private static final String TEMP = "/sys/class/thermal/thermal_zone0/temp";
++
++    private long lastIdle = -1, lastTotal = -1;
++    private long ramTotalKb = -1;
++
++    String line() {
++        return "CPU " + pct(cpu()) + "   RAM " + pct(ram()) + "   ROM " + pct(rom())
++                + "   PWR " + pct(pwr()) + "   TEMP " + temp();
++    }
++
++    static String placeholder() {
++        return "CPU --   RAM --   ROM --   PWR --   TEMP --";
++    }
++
++    private static String pct(int v) {
++        return v < 0 ? "--" : v + "%";
++    }
++
++    // Busy share of all cores since the previous call, from /proc/stat.
++    private int cpu() {
++        String l = firstLine("/proc/stat");
++        if (l == null || !l.startsWith("cpu ")) return -1;
++        String[] f = l.trim().split("\\s+");
++        long total = 0, idle = 0;
++        try {
++            for (int i = 1; i < f.length && i <= 8; i++) { // user nice system idle iowait irq softirq steal
++                long v = Long.parseLong(f[i]);
++                total += v;
++                if (i == 4 || i == 5) idle += v;
++            }
++        } catch (NumberFormatException e) {
++            return -1;
++        }
++        int out = -1;
++        if (lastTotal >= 0 && total > lastTotal) {
++            out = (int) Math.round(100.0 * (1 - (double) (idle - lastIdle) / (total - lastTotal)));
++        }
++        lastIdle = idle;
++        lastTotal = total;
++        return clamp(out);
++    }
++
++    // Used share of the real RAM. MemTotal is faked on some boxes (8 GB on a 1 GB board), so the total
++    // comes from the pages the kernel actually manages, and MemTotal only as a fallback.
++    private int ram() {
++        if (ramTotalKb < 0) ramTotalKb = managedKb();
++        long avail = -1, memTotal = -1;
++        try (BufferedReader r = new BufferedReader(new FileReader("/proc/meminfo"))) {
++            for (String l; (l = r.readLine()) != null && (avail < 0 || memTotal < 0); ) {
++                if (l.startsWith("MemAvailable:")) avail = digits(l);
++                else if (l.startsWith("MemTotal:")) memTotal = digits(l);
++            }
++        } catch (Exception e) {
++            return -1;
++        }
++        long total = ramTotalKb > 0 ? Math.min(ramTotalKb, memTotal > 0 ? memTotal : ramTotalKb) : memTotal;
++        if (total <= 0 || avail < 0) return -1;
++        return clamp((int) Math.round(100.0 * (total - Math.min(avail, total)) / total));
++    }
++
++    private static long managedKb() {
++        long pages = 0;
++        try (BufferedReader r = new BufferedReader(new FileReader("/proc/zoneinfo"))) {
++            for (String l; (l = r.readLine()) != null; ) {
++                l = l.trim();
++                if (l.startsWith("managed ")) pages += digits(l);
++            }
++            long page = Os.sysconf(OsConstants._SC_PAGESIZE);
++            return pages > 0 ? pages * (page > 0 ? page : 4096) / 1024 : -1;
++        } catch (Exception e) {
++            return -1;
++        }
++    }
++
++    // Used share of the internal storage apps live on.
++    private static int rom() {
++        try {
++            StatFs s = new StatFs(Environment.getDataDirectory().getPath());
++            long total = s.getBlockCountLong(), free = s.getAvailableBlocksLong();
++            if (total <= 0) return -1;
++            return clamp((int) Math.round(100.0 * (total - free) / total));
++        } catch (Exception e) {
++            return -1;
++        }
++    }
++
++    // No power sensor here, so this is the share of the CPU's power budget in use: cores online times
++    // clock speed, against every core at full speed. It drops when the box throttles from heat.
++    private static int pwr() {
++        int online = countCpus(firstLine(CPU_DIR + "online")), possible = countCpus(firstLine(CPU_DIR + "possible"));
++        long cur = digits(firstLine(CPU_DIR + "cpu0/cpufreq/scaling_cur_freq"));
++        long max = digits(firstLine(CPU_DIR + "cpu0/cpufreq/cpuinfo_max_freq"));
++        if (online <= 0 || possible <= 0 || cur <= 0 || max <= 0) return -1;
++        return clamp((int) Math.round(100.0 * online * cur / ((double) possible * max)));
++    }
++
++    private static String temp() {
++        long t = digits(firstLine(TEMP));
++        if (t < 0) return "--";
++        if (t > 1000) t /= 1000; // some kernels report millidegrees
++        return t + "°C";
++    }
++
++    // "0-2,4" -> 4
++    private static int countCpus(String list) {
++        if (list == null || list.trim().isEmpty()) return -1;
++        int n = 0;
++        try {
++            for (String part : list.trim().split(",")) {
++                String[] ab = part.split("-");
++                int a = Integer.parseInt(ab[0].trim()), b = ab.length > 1 ? Integer.parseInt(ab[1].trim()) : a;
++                n += b - a + 1;
++            }
++        } catch (NumberFormatException e) {
++            return -1;
++        }
++        return n;
++    }
++
++    private static String firstLine(String path) {
++        try (BufferedReader r = new BufferedReader(new FileReader(path))) {
++            return r.readLine();
++        } catch (Exception e) {
++            return null;
++        }
++    }
++
++    // First run of digits in s, or -1.
++    private static long digits(String s) {
++        if (s == null) return -1;
++        int i = 0, n = s.length();
++        while (i < n && !Character.isDigit(s.charAt(i))) i++;
++        if (i == n) return -1;
++        long v = 0;
++        while (i < n && Character.isDigit(s.charAt(i))) v = v * 10 + (s.charAt(i++) - '0');
++        return v;
++    }
++
++    private static int clamp(long v) {
++        return v < 0 ? -1 : (int) Math.min(100, v);
++    }
++}

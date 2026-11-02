@@ -30,13 +30,17 @@ Após desinstalar, confira `/data/app` e reinicie. Em um caso, `pm uninstall` re
 
 ## 3. Launcher
 
-Aplique o patch ao código do TV Detox e siga as instruções de build daquele projeto:
+Gere o APK e instale:
 
 ```sh
-git apply patches/tv-detox-sem-servico-de-entradas.patch
+scripts/build-launcher.sh
+adb install -r build/tvhome.apk
 ```
 
-O patch evita a falha de `getTvInputList()` em aparelhos sem serviço de entradas de TV.
+O script baixa o TV Detox no commit `b22a1e3` e aplica `patches/tv-detox-tvbox-h3.patch`. Sem `KEYSTORE`, uma chave
+nova é criada em `build/key.jks`. Guarde-a: atualizações exigem a mesma chave.
+
+Depois de instalar, defina o launcher como tela inicial. O launcher original pode continuar ativo como reserva.
 
 ## 4. Kodi e localização
 

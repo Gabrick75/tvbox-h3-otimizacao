@@ -1,65 +1,93 @@
-# TV box Allwinner H3: limpeza e otimização
+# Allwinner H3 TV box: cleanup and optimization
 
-Limpeza e otimização via ADB de uma TV box genérica com Allwinner H3 (`dolphin_fvd_p1`).
+**English** · [Português](README.pt-BR.md)
 
-> Procedimento validado em um único aparelho. Alguns passos exigem root e alteram o `/system`. Faça backup antes.
+ADB-based cleanup and optimization of a generic Allwinner H3 TV box (`dolphin_fvd_p1`).
 
-## Aparelho
+![Home screen with the system usage line](docs/images/home.png)
 
-| Item | Especificação |
+> Validated on a single device. Some steps require root and modify `/system`. Back up first.
+
+## Device
+
+| Item | Specification |
 |---|---|
-| SoC | Allwinner H3, 4× Cortex-A7 a 1,008 GHz |
-| RAM | 1 GB (o sistema anuncia 8 GB) |
-| Armazenamento | 8 GB NAND |
-| Sistema | Android 7.0 (SDK 24), build `eng`, kernel 4.4.55 |
+| SoC | Allwinner H3, 4× Cortex-A7 at 1.008 GHz |
+| RAM | 1 GB (the system reports 8 GB) |
+| Storage | 8 GB NAND |
+| OS | Android 7.0 (SDK 24), `eng` build, kernel 4.4.55 |
 
-## Resultados
+## Results
 
-| Métrica | Antes | Depois |
+| Metric | Before | After |
 |---|---|---|
-| Uso do `/data` | 83% | 36% |
-| Abertura do YouTube | 1.306 ms | 1.020 ms |
-| Abertura das Configurações | 1.537 ms | 1.431 ms |
-| Leitura sequencial da NAND | 24,7 MB/s | 26,6 MB/s |
+| `/data` usage | 83% | 36% |
+| YouTube launch | 1,306 ms | 1,020 ms |
+| Settings launch | 1,537 ms | 1,431 ms |
+| NAND sequential read | 24.7 MB/s | 26.6 MB/s |
 
-Médias de 3 rodadas por configuração. Detalhes em [docs/desempenho.md](docs/desempenho.md).
+Averages of 3 runs per configuration. Details in [docs/desempenho.md](docs/desempenho.md).
 
-## Etapas
+## Steps
 
-1. Backup das partições.
-2. Desativação e remoção de apps indesejados.
-3. Troca do launcher pelo [TV Detox](https://github.com/Ansub/tv-detox), com [patch](patches/tv-detox-sem-servico-de-entradas.patch) de compatibilidade.
-4. Limpeza do cache do Kodi e desativação da localização.
-5. Ajuste de I/O da NAND, aplicado a cada boot.
+1. Back up the partitions.
+2. Disable and remove unwanted apps.
+3. Replace the launcher with [TV Detox](https://github.com/Ansub/tv-detox), plus a [custom patch](patches/tv-detox-tvbox-h3.patch).
+4. Clear the Kodi cache and turn off location.
+5. Tune NAND I/O, applied at every boot.
 
-Comandos em [docs/procedimento.md](docs/procedimento.md).
+Commands in [docs/procedimento.md](docs/procedimento.md).
 
-## Estrutura
+## Launcher
 
-| Caminho | Conteúdo |
+The patch adds to TV Detox:
+
+- support for devices without a TV input service;
+- a system usage line below the clock: `CPU`, `RAM`, `ROM`, `PWR` and `TEMP`;
+- an option under **Settings** to show or hide that line.
+
+`RAM` uses the real memory, not the total reported by the system. `PWR` is the share of CPU capacity in use (active
+cores × frequency), since the box has no power sensor.
+
+To build the APK:
+
+```sh
+scripts/build-launcher.sh
+```
+
+Requires Git, Java 17+ and the Android SDK with platform and build-tools 34 or 35. The APK is written to
+`build/tvhome.apk`. To update an installed launcher, sign it with the same key:
+`KEYSTORE=path/key.jks scripts/build-launcher.sh`.
+
+## Layout
+
+| Path | Contents |
 |---|---|
-| `config/` | `io-tuning.rc`, ajuste de I/O lido pelo `init` |
-| `scripts/` | aplicação temporária do ajuste e teste A/B |
-| `listas/` | pacotes desativados e removidos |
-| `patches/` | patch do TV Detox |
-| `resultados/` | dados brutos do teste A/B |
-| `docs/` | documentação |
+| `config/` | `io-tuning.rc`, I/O tuning read by `init` |
+| `scripts/` | launcher build, temporary tuning and A/B test |
+| `listas/` | disabled and removed packages |
+| `patches/` | TV Detox patch |
+| `build/` | build output, not tracked by Git |
+| `resultados/` | raw A/B test data |
+| `docs/` | documentation |
 
-## Documentação
+## Documentation
 
-- [Procedimento](docs/procedimento.md)
-- [Desempenho](docs/desempenho.md)
-- [Segurança](docs/seguranca.md)
-- [Restauração](docs/restauracao.md)
-- [Linux na NAND](docs/linux-nand.md)
+The detailed documentation is in Portuguese.
 
-## Limitações
+- [Procedure](docs/procedimento.md)
+- [Performance](docs/desempenho.md)
+- [Security](docs/seguranca.md)
+- [Recovery](docs/restauracao.md)
+- [Linux on NAND](docs/linux-nand.md)
 
-- O gargalo principal é térmico: acima de 85 °C a box desliga núcleos. Isso exige solução física.
-- A restauração do backup não foi testada.
-- O firmware tem root embutido e patch de segurança de 2016. A box não deve ser considerada confiável.
+## Limitations
 
-## Referências
+- The main bottleneck is thermal: above 85 °C the box shuts down cores. This needs a physical fix.
+- Restoring the backup has not been tested.
+- The firmware ships with built-in root and a 2016 security patch. Do not treat the box as trustworthy.
+
+## References
 
 - [CleanYourTV](https://github.com/Gathin23/cleanyourtv)
 - [TV Detox](https://github.com/Ansub/tv-detox)
@@ -68,6 +96,6 @@ Comandos em [docs/procedimento.md](docs/procedimento.md).
 - [Android init](https://android.googlesource.com/platform/system/core/+/master/init/README.md)
 - [Linux: queue sysfs](https://www.kernel.org/doc/html/latest/block/queue-sysfs.html)
 
-## Licença
+## License
 
-[MIT](LICENSE). O patch deriva do TV Detox (MIT, © 2026 Ansub Khan).
+[MIT](LICENSE). The patch is derived from TV Detox (MIT, © 2026 Ansub Khan).

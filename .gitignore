@@ -7,3 +7,6 @@ backup/
 *.keystore
 shots/
 qw
+
+# Saída do build do launcher
+build/
